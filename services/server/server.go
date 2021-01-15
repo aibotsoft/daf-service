@@ -24,27 +24,34 @@ type Server struct {
 func NewServer(cfg *config.Config, log *zap.SugaredLogger, handler *handler.Handler) *Server {
 	return &Server{cfg: cfg, log: log, handler: handler, gs: grpc.NewServer()}
 }
-func (*Server) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
-	return &pb.PingResponse{}, nil
-}
-func (s *Server) Serve() error {
-	addr, err := s.handler.Conf.GetGrpcAddr(context.Background(), s.cfg.Service.Name)
-	if err != nil {
-		s.log.Panic(err)
-	}
-	lis, err := net.Listen("tcp", addr)
-	if err != nil {
-		return errors.Wrap(err, "net.Listen error")
-	}
-	pb.RegisterFortedServer(s.gs, s)
-	s.log.Infow("gRPC server listens", "service", s.cfg.Service.Name, "addr", addr)
-	return s.gs.Serve(lis)
-}
 func (s *Server) Close() {
 	s.log.Debug("begin gRPC server gracefulStop")
 	s.gs.GracefulStop()
 	s.handler.Close()
 	s.log.Debug("end gRPC server gracefulStop")
+}
+
+func (*Server) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
+	return &pb.PingResponse{}, nil
+}
+func (s *Server) ReleaseCheck(ctx context.Context, req *pb.ReleaseCheckRequest) (*pb.ReleaseCheckResponse, error) {
+	s.handler.ReleaseCheck(ctx, req.GetSurebet())
+	return &pb.ReleaseCheckResponse{}, nil
+}
+func (s *Server) Serve() error {
+	//addr, err := s.handler.Conf.GetGrpcAddr(context.Background(), s.cfg.Service.Name)
+	//if err != nil {
+	//	s.log.Panic(err)
+	//}
+	hostPort := net.JoinHostPort("", s.cfg.Service.GrpcPort)
+
+	lis, err := net.Listen("tcp", hostPort)
+	if err != nil {
+		return errors.Wrap(err, "net.Listen error")
+	}
+	pb.RegisterFortedServer(s.gs, s)
+	s.log.Infow("gRPC server listens", "service", s.cfg.Service.Name, "hostPort", hostPort)
+	return s.gs.Serve(lis)
 }
 func (s *Server) CheckLine(ctx context.Context, req *pb.CheckLineRequest) (*pb.CheckLineResponse, error) {
 	sb := req.GetSurebet()
@@ -66,7 +73,7 @@ func (s *Server) PlaceBet(ctx context.Context, req *pb.PlaceBetRequest) (*pb.Pla
 func (s *Server) GetResults(ctx context.Context, req *pb.GetResultsRequest) (*pb.GetResultsResponse, error) {
 	results, err := s.handler.GetResults(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "GetResults from db error")
+		return nil, status.Errorf(codes.Internal, "GetResults from db error, service: %v", s.cfg.Service.Name)
 	}
 	return &pb.GetResultsResponse{Results: results}, nil
 }

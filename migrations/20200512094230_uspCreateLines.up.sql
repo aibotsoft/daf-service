@@ -4,17 +4,17 @@ begin
 
     MERGE dbo.Line AS t
     USING @TVP s
-    ON (t.Id = s.Id and t.BetTeam = s.BetTeam)
+    ON (t.Id = s.Id)
 
     WHEN MATCHED THEN
         UPDATE
-        SET Price     = s.Price,
-            BetTypeId=s.BetTypeId,
-            Points=s.Points,
-            EventId=s.EventId,
+        SET BetTypeId = s.BetTypeId,
+            Points = s.Points,
+            EventId = s.EventId,
+            Cat = s.Cat,
             UpdatedAt =sysdatetimeoffset()
 
     WHEN NOT MATCHED THEN
-        INSERT (Id, BetTeam, Price, BetTypeId, Points, EventId)
-        VALUES (s.Id, s.BetTeam, s.Price, s.BetTypeId, s.Points, EventId);
+        INSERT (Id,  BetTypeId, Points, EventId, Cat)
+        VALUES (s.Id,  s.BetTypeId, s.Points, EventId, s.Cat);
 end

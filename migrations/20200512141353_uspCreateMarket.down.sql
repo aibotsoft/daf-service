@@ -1,1 +1,1 @@
-drop proc dbo.uspCreateMarket
+drop proc dbo.uspCreateMarkets

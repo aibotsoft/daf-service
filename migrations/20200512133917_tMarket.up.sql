@@ -7,3 +7,10 @@ create table dbo.Market
 
     constraint PK_Market primary key (Id),
 )
+
+create type dbo.MarketType as table
+(
+    Id     int          not null,
+    Name   varchar(1800) not null,
+    primary key (Id)
+)

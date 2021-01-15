@@ -4,13 +4,12 @@ begin
 
     MERGE dbo.League AS t
     USING @TVP s
-    ON (t.Id = s.Id)
+    ON (t.Id = s.Id and t.SportId = s.SportId)
 
     WHEN MATCHED THEN
         UPDATE
         SET Name      = s.Name,
-            SportId   = s.SportId,
-            UpdatedAt =sysdatetimeoffset()
+            UpdatedAt = sysdatetimeoffset()
 
     WHEN NOT MATCHED THEN
         INSERT (Id, Name, SportId)

@@ -19,3 +19,4 @@ dist/
 .vs/
 sql/
 play/
+temp/

@@ -1,23 +1,17 @@
 package handler
 
-import (
-	"github.com/stretchr/testify/assert"
-	"strings"
-	"testing"
-)
-
-func TestConvert(t *testing.T) {
-	split := strings.Split(testNames, "\n")
-	for i, name := range split {
-		got, err := Convert(name)
-		assert.NoError(t, err)
-		if got == nil {
-			t.Log(i, name, got)
-		}
-		t.Log(got)
-
-	}
-}
+//func TestConvert(t *testing.T) {
+//	split := strings.Split(testNames, "\n")
+//	for i, name := range split {
+//		got, err := Convert(name)
+//		assert.NoError(t, err)
+//		if got == nil {
+//			t.Log(i, name, got)
+//		}
+//		t.Log(got)
+//
+//	}
+//}
 
 var testNames = `П2
 (сеты) П1

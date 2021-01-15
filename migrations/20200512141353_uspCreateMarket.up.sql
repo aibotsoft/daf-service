@@ -1,11 +1,17 @@
-create or alter proc dbo.uspCreateMarket @Id int, @Name varchar(300) as
+create or alter proc dbo.uspCreateMarkets @TVP dbo.MarketType READONLY as
 begin
     set nocount on
-    declare @OldId int
 
-    select @OldId = Id from dbo.Market where Id = @Id
-    if @@rowcount = 0
-        insert into dbo.Market (Id, Name) values (@Id, @Name)
-    else
-        select @OldId
+    MERGE dbo.Market AS t
+    USING @TVP s
+    ON (t.Id = s.Id)
+
+    WHEN MATCHED THEN
+        UPDATE
+        SET Name      = s.Name,
+            UpdatedAt = sysdatetimeoffset()
+
+    WHEN NOT MATCHED THEN
+        INSERT (Id, Name)
+        VALUES (s.Id, s.Name);
 end

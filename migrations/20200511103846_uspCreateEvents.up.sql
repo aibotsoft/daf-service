@@ -13,9 +13,10 @@ begin
             LeagueId   = s.LeagueId,
             SportId    = s.SportId,
             EventState = s.EventState,
+            Starts     = s.Starts,
             UpdatedAt  = sysdatetimeoffset()
 
     WHEN NOT MATCHED THEN
-        INSERT (Id, Home, Away, LeagueId, SportId, EventState)
-        VALUES (s.Id, s.Home, s.Away, s.LeagueId, s.SportId, s.EventState);
+        INSERT (Id, Home, Away, LeagueId, SportId, EventState, Starts)
+        VALUES (s.Id, s.Home, s.Away, s.LeagueId, s.SportId, s.EventState, s.Starts);
 end

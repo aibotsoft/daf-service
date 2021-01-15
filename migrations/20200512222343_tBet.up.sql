@@ -1,6 +1,8 @@
 create table dbo.Bet
 (
     SurebetId  bigint                                     not null,
+    SideIndex  tinyint                                    not null,
+
     BetId      bigint,
     TryCount   tinyint,
 
@@ -16,5 +18,5 @@ create table dbo.Bet
     CreatedAt  datetimeoffset default sysdatetimeoffset() not null,
     UpdatedAt  datetimeoffset default sysdatetimeoffset() not null,
 
-    constraint PK_Bet primary key (SurebetId),
+    constraint PK_Bet primary key (SurebetId, SideIndex),
 )

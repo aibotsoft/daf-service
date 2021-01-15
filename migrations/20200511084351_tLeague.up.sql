@@ -6,7 +6,7 @@ create table dbo.League
     CreatedAt datetimeoffset default sysdatetimeoffset() not null,
     UpdatedAt datetimeoffset default sysdatetimeoffset() not null,
 
-    constraint PK_LeagueId primary key (Id),
+    constraint PK_LeagueId primary key (Id, SportId),
 )
 
 create type dbo.LeagueType as table
@@ -15,5 +15,5 @@ create type dbo.LeagueType as table
     Name       varchar(1000) not null,
     SportId    int           not null,
     EventState varchar(300)  not null,
-    primary key (Id)
+    primary key (Id, SportId)
 )

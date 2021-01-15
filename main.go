@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/aibotsoft/daf-service/pkg/api"
 	"github.com/aibotsoft/daf-service/pkg/store"
 	"github.com/aibotsoft/daf-service/services/auth"
 	"github.com/aibotsoft/daf-service/services/collector"
@@ -25,9 +24,11 @@ func main() {
 	sto := store.NewStore(cfg, log, db)
 	conf := config_client.New(cfg, log)
 
-	serviceApi := api.New(cfg, log)
-	au := auth.New(cfg, log, sto, serviceApi, conf)
-	h := handler.NewHandler(cfg, log, serviceApi, sto, au, conf)
+	au := auth.New(cfg, log, sto, conf)
+	go au.AuthJob()
+	h := handler.NewHandler(cfg, log, sto, au, conf)
+	go h.BalanceJob()
+	go h.BetListJob()
 
 	s := server.NewServer(cfg, log, h)
 	// Инициализируем Close
@@ -38,7 +39,7 @@ func main() {
 		errc <- fmt.Errorf("%s", <-c)
 	}()
 
-	c := collector.New(cfg, log, serviceApi, sto, au)
+	c := collector.New(cfg, log, sto)
 	go c.CollectJob()
 
 	go func() { errc <- s.Serve() }()

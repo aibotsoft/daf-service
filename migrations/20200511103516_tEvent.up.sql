@@ -1,8 +1,8 @@
 create table dbo.Event
 (
     Id         int                                        not null,
-    Home       varchar(300)                               not null,
-    Away       varchar(300)                               not null,
+    Home       int                                        not null,
+    Away       int                                        not null,
 
     LeagueId   int                                        not null,
     SportId    int                                        not null,
@@ -16,10 +16,11 @@ create table dbo.Event
 create type dbo.EventType as table
 (
     Id         int          not null,
-    Home       varchar(300) not null,
-    Away       varchar(300) not null,
+    Home       int          not null,
+    Away       int          not null,
     LeagueId   int          not null,
     SportId    int          not null,
     EventState varchar(300) not null,
+    Starts     datetimeoffset,
     primary key (Id)
 )

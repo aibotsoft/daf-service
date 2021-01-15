@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
-	"github.com/aibotsoft/daf-service/pkg/api"
+	"fmt"
 	pb "github.com/aibotsoft/gen/fortedpb"
 	"github.com/aibotsoft/micro/cache"
 	"github.com/aibotsoft/micro/config"
@@ -12,7 +12,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
-	"strconv"
+	"time"
 )
 
 type Store struct {
@@ -33,128 +33,47 @@ func (s *Store) Close() {
 	}
 	s.Cache.Close()
 }
-
-func (s *Store) LoadToken(ctx context.Context) (*api.Token, error) {
-	s.log.Info("begin load token from db")
-	var t api.Token
-	err := s.db.GetContext(ctx, &t, "select top 1 Id, Host, Token,  LastCheckAt Last from dbo.Auth order by LastCheckAt desc")
-	if err != nil {
-		return nil, errors.Wrap(err, "load token error")
-	}
-	//a.log.Infow("loaded token", "host", a.host, "token", a.token, "last", a.last, "id", a.id)
-	return &t, nil
-}
-
-var sportCache = make(map[int64]api.Sport)
-
-func (s *Store) SaveSports(ctx context.Context, sports []api.Sport) error {
-	var newSports []api.Sport
-	for _, sport := range sports {
-		_, ok := sportCache[sport.Id]
-		if !ok {
-			newSports = append(newSports, sport)
-			sportCache[sport.Id] = sport
+func (s *Store) SetVerifyWithTTL(key string, value interface{}, ttl time.Duration) bool {
+	s.Cache.SetWithTTL(key, value, 1, ttl)
+	for i := 0; i < 100; i++ {
+		got, b := s.Cache.Get(key)
+		if b {
+			if got == value {
+				return true
+			} else {
+				s.log.Info("got != value:", got, value)
+				return false
+			}
 		}
+		time.Sleep(time.Microsecond * 5)
 	}
-	if len(newSports) == 0 {
-		return nil
-	}
-	tvp := mssql.TVP{TypeName: "SportType", Value: newSports}
-	_, err := s.db.ExecContext(ctx, "dbo.uspCreateSports", tvp)
-	if err != nil {
-		return errors.Wrapf(err, "uspCreateSport error for %v", newSports)
-	}
-	return nil
+	return false
 }
 
-var leagueCache = make(map[int64]api.League)
-
-func (s *Store) SaveLeagues(ctx context.Context, leagues []api.League) error {
-	var newLeagues []api.League
-	for _, league := range leagues {
-		_, ok := leagueCache[league.Id]
-		if !ok {
-			newLeagues = append(newLeagues, league)
-			leagueCache[league.Id] = league
-		}
-	}
-	if len(newLeagues) == 0 {
-		return nil
-	}
-	tvp := mssql.TVP{TypeName: "LeagueType", Value: newLeagues}
-	_, err := s.db.ExecContext(ctx, "dbo.uspCreateLeagues", tvp)
-	if err != nil {
-		return errors.Wrapf(err, "uspCreateLeagues error for %v", newLeagues)
-	}
-	return nil
-}
-
-var eventCache = make(map[int64]api.Event)
-
-func (s *Store) SaveEvents(ctx context.Context, events []api.Event) error {
-	var newEvents []api.Event
-	for i := range events {
-		got, ok := eventCache[events[i].Id]
-		if !ok {
-			newEvents = append(newEvents, events[i])
-			eventCache[events[i].Id] = events[i]
-		} else {
-			s.log.Infow("double_event", "old", got, "new", events[i])
-		}
-	}
-	if len(newEvents) == 0 {
-		return nil
-	}
-	tvp := mssql.TVP{TypeName: "EventType", Value: newEvents}
-	_, err := s.db.ExecContext(ctx, "dbo.uspCreateEvents", tvp)
-	if err != nil {
-		return errors.Wrapf(err, "uspCreateEvents error for %v", newEvents)
-	}
-	return nil
-}
-
-type lineKey struct {
-	id      int64
-	betTeam string
-}
-
-func (s *Store) SaveMarkets(ctx context.Context, id int64, name string) error {
-	key := "market:" + strconv.FormatInt(id, 10)
-	_, b := s.Cache.Get(key)
-	if b {
-		return nil
-	}
-	_, err := s.db.ExecContext(ctx, "dbo.uspCreateMarket", id, name)
-	s.Cache.Set(key, id, 1)
+func (s *Store) SaveSession(session string, token string) error {
+	_, err := s.db.Exec("dbo.uspSaveSession", sql.Named("Session", session), sql.Named("Token", token))
 	return err
 }
-func (s *Store) SaveLines(ctx context.Context, tickets []api.Ticket) error {
-	var newTickets []api.Ticket
-	var ticketCache = make(map[lineKey]api.Ticket)
-
-	for _, ticket := range tickets {
-		err := s.SaveMarkets(ctx, ticket.BetTypeId, ticket.MarketName)
-		if err != nil {
-			s.log.Errorw("save market error")
-		}
-		key := lineKey{id: ticket.Id, betTeam: ticket.BetTeam}
-		got, ok := ticketCache[key]
-		if !ok {
-			newTickets = append(newTickets, ticket)
-			ticketCache[key] = ticket
-		} else {
-			s.log.Infow("ticket double", "first", got, "second", ticket)
-		}
+func (s *Store) LoadToken(ctx context.Context) (session string, token string, err error) {
+	err = s.db.QueryRowContext(ctx, "select top 1 Session, Token from dbo.Auth order by LastCheckAt desc").Scan(&session, &token)
+	if err != nil {
+		return "", "", errors.Wrap(err, "load_token_error")
 	}
-	if len(newTickets) == 0 {
+	return
+}
+
+type Market struct {
+	Id   int64
+	Name string
+}
+
+func (s *Store) SaveMarkets(ctx context.Context, markets []Market) error {
+	if len(markets) == 0 {
 		return nil
 	}
-	tvp := mssql.TVP{TypeName: "LineType", Value: newTickets}
-	_, err := s.db.ExecContext(ctx, "dbo.uspCreateLines", tvp)
-	if err != nil {
-		return errors.Wrapf(err, "uspCreateLines error for %v", newTickets)
-	}
-	return nil
+	tvp := mssql.TVP{TypeName: "MarketType", Value: markets}
+	_, err := s.db.ExecContext(ctx, "dbo.uspCreateMarkets", tvp)
+	return err
 }
 
 func (s *Store) FindSportByName(ctx context.Context, sportName string) (int64, error) {
@@ -185,58 +104,55 @@ func (s *Store) FindLeagueByName(ctx context.Context, sportId int64, leagueName 
 }
 
 const findEventQ = `
-select Id from dbo.Event where Home = @p1 and Away=@p2 and LeagueId=@p3 and SportId=@p4
+select Id from dbo.Event where Home = @p1 and Away=@p2 and LeagueId=@p3 and SportId=@p4 and Starts > sysdatetimeoffset()
 `
 
-func (s *Store) FindEventByName(ctx context.Context, home string, away string, leagueId int64, sportId int64) (int64, error) {
-	var id int64
-	err := s.db.GetContext(ctx, &id, findEventQ, home, away, leagueId, sportId)
-	return id, err
+func (s *Store) FindEventByName(ctx context.Context, home int64, away int64, leagueId int64, sportId int64) (id string, err error) {
+	err = s.db.GetContext(ctx, &id, findEventQ, home, away, leagueId, sportId)
+	return
 }
 
-//func (s *Store) FindEvent(ctx context.Context, side *pb.SurebetSide) error {
-//	key := "event:" + strconv.FormatInt(side.Forted.EventId, 10)
-//	got, b := s.Cache.Get(key)
-//	if b {
-//		side.EventId = got.(int64)
-//		return nil
-//	}
-//	var err error
-//	side.SportId, err = s.FindSportByName(ctx, side.SportName)
-//	if err != nil {
-//		return errors.Wrapf(err, "not found sport by name: %q in db", side.SportName)
-//	}
-//	side.LeagueId, err = s.FindLeagueByName(ctx, side.SportId, side.LeagueName)
-//	if err != nil {
-//		return errors.Wrapf(err, "not found league in db, name: %q, sportId: %v", side.LeagueName, side.SportId)
-//	}
-//	side.EventId, err = s.FindEventByName(ctx, side.Home, side.Away, side.LeagueId, side.SportId)
-//	if err != nil {
-//		return errors.Wrapf(err, "not found event in db, home: %q, away: %q, leagueId: %d, sportId: %d", side.Home, side.Away, side.LeagueId, side.SportId)
-//	}
-//	s.Cache.Set(key, side.EventId, 1)
-//	return nil
+//func (s *Store) FindLine(ctx context.Context, betTypeId int64, eventId int64, points *float64, cat int64) (id int64, err error) {
+//	err = s.db.GetContext(ctx, &id, "dbo.uspFindLine",
+//		sql.Named("EventId", eventId),
+//		sql.Named("BetTypeId", betTypeId),
+//		sql.Named("Points", points),
+//		sql.Named("Cat", cat),
+//	)
+//	return
 //}
+const findLineQ = "select Id, BetTypeId, Points,EventId, Cat from dbo.Line where EventId = @EventId and BetTypeId = @BetTypeId"
 
-//const findLineQ = "select Id from dbo.Line where EventId = @p1 and BetTeam = @p2 and BetTypeId = @p3"
+func (s *Store) FindLine(ctx context.Context, betTypeId int64, eventId string) (lines []Ticket, err error) {
+	err = s.db.SelectContext(ctx, &lines, findLineQ, sql.Named("EventId", eventId), sql.Named("BetTypeId", betTypeId))
+	return
+}
 
-func (s *Store) FindLine(ctx context.Context, line *api.Ticket) error {
-	//err := s.db.GetContext(ctx, &line.Id, findLineQ, side.EventId, line.BetTeam, line.BetTypeId)
-	err := s.db.GetContext(ctx, &line.Id, "dbo.uspFindLine",
-		sql.Named("BetTeam", line.BetTeam),
-		sql.Named("BetTypeId", line.BetTypeId),
-		sql.Named("EventId", line.EventId),
-		sql.Named("Points", line.Points),
-	)
-	return err
+type Stat struct {
+	MarketName  string
+	CountEvent  int64
+	CountLine   int64
+	AmountEvent int64
+	AmountLine  int64
 }
 
 func (s *Store) GetStat(side *pb.SurebetSide) error {
-	err := s.db.Get(side.Check, "dbo.uspCalcStat", sql.Named("EventId", side.EventId), sql.Named("MarketName", side.MarketName))
+	var stat []Stat
+	err := s.db.Select(&stat, "dbo.uspCalcStat", sql.Named("EventId", side.EventId))
 	if err == sql.ErrNoRows {
 		return nil
 	} else if err != nil {
 		return errors.Wrap(err, "uspCalcStat error")
+	} else {
+		for i := range stat {
+			side.Check.AmountEvent = stat[i].AmountEvent
+			side.Check.CountEvent = stat[i].CountEvent
+			if stat[i].MarketName == side.MarketName {
+				side.Check.CountLine = stat[i].CountLine
+				side.Check.AmountLine = stat[i].AmountLine
+				return nil
+			}
+		}
 	}
 	return nil
 }
@@ -245,6 +161,8 @@ func (s *Store) SaveCheck(sb *pb.Surebet) error {
 	side := sb.Members[0]
 	_, err := s.db.Exec("dbo.uspSaveSide",
 		sql.Named("Id", sb.SurebetId),
+		sql.Named("SideIndex", side.Num-1),
+
 		sql.Named("SportName", side.SportName),
 		sql.Named("SportId", side.SportId),
 		sql.Named("LeagueName", side.LeagueName),
@@ -284,6 +202,92 @@ func (s *Store) SaveCheck(sb *pb.Surebet) error {
 	)
 	if err != nil {
 		return errors.Wrapf(err, "uspSaveSide error")
+	}
+	return nil
+}
+
+type DemoEvent struct {
+	EventId    string
+	SportName  string
+	SportId    int64
+	LeagueName string
+	LeagueId   int64
+	Home       string
+	Away       string
+	EventState string
+}
+
+func (s *Store) GetDemoEvents(ctx context.Context, count int, sportId int64, homeLike string) (events []DemoEvent, err error) {
+	err = s.db.SelectContext(ctx, &events, "select EventId, SportName, SportId, LeagueName, LeagueId, Home, Away, EventState from dbo.fnGetDemoEvents(@p1, @p2, @p3)", count, sportId, homeLike)
+	return
+}
+func (s *Store) FindTeamByName(ctx context.Context, teamName string, sportId int64) (id int64, err error) {
+	err = s.db.GetContext(ctx, &id, "select Id from dbo.Team where Name=@p1 and SportId=@p2", teamName, sportId)
+	return
+}
+
+func (s *Store) FindLineByBetTypeId(ctx context.Context, betTypeId int64, eventId int64) (lines []Ticket, err error) {
+	err = s.db.SelectContext(ctx, &lines, "select Id, BetTypeId, EventId,Points from dbo.Line where BetTypeId=@p1 and EventId=@p2", betTypeId, eventId)
+	return
+}
+
+func (s *Store) SaveBet(sb *pb.Surebet) error {
+	side := sb.Members[0]
+	_, err := s.db.Exec("dbo.uspSaveBet",
+		sql.Named("SurebetId", sb.SurebetId),
+		sql.Named("SideIndex", side.Num-1),
+
+		sql.Named("BetId", side.ToBet.Id),
+		sql.Named("TryCount", side.GetToBet().GetTryCount()),
+		sql.Named("Status", side.GetBet().GetStatus()),
+		sql.Named("StatusInfo", side.GetBet().GetStatusInfo()),
+		sql.Named("Start", side.GetBet().GetStart()),
+		sql.Named("Done", side.GetBet().GetDone()),
+		sql.Named("Price", side.GetBet().GetPrice()),
+		sql.Named("Stake", side.GetBet().GetStake()),
+		sql.Named("ApiBetId", side.GetBet().GetApiBetId()),
+	)
+	if err != nil {
+		return errors.Wrap(err, "uspSaveBet error")
+	}
+	return nil
+}
+
+func (s *Store) Demo() error {
+	_, err := s.db.Exec("insert into dbo.Sport (Id) values (999)")
+	if err != nil {
+		n := err.(mssql.Error)
+		//err := errors.Unwrap(err)
+		s.log.Error(n)
+	}
+	return nil
+
+}
+
+func (s *Store) GetStartTime(ctx context.Context, side *pb.SurebetSide) (err error) {
+	key := fmt.Sprintf("starts:%v", side.EventId)
+	got, b := s.Cache.Get(key)
+	if b {
+		side.Starts = got.(string)
+	}
+	err = s.db.GetContext(ctx, &side.Starts, "select Starts from dbo.Event where Id=@p1", side.EventId)
+	if err != nil {
+		return err
+	}
+	s.Cache.SetWithTTL(key, side.Starts, 1, time.Minute)
+	return
+}
+
+const deleteLineQ = `
+delete
+from dbo.Line
+where Id=@p1
+`
+
+func (s *Store) DeleteLine(ctx context.Context, lineId int64) error {
+	_, err := s.db.ExecContext(ctx, deleteLineQ, lineId)
+	if err != nil {
+		return err
 	}
 	return nil
 }
