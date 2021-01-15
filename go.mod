@@ -10,7 +10,6 @@ require (
 	github.com/antchfx/xpath v1.1.11 // indirect
 	github.com/denisenkom/go-mssqldb v0.9.0
 	github.com/dgraph-io/ristretto v0.0.3
-	github.com/go-resty/resty/v2 v2.3.0
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.4.3 // indirect
 	github.com/jmoiron/sqlx v1.2.0
